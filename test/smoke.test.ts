@@ -17,9 +17,8 @@ type ErrorResponse = {
 };
 
 type PromptResponse = {
-  id: string;
-  name: string;
-  description: string;
+  promptId: string;
+  promptName: string;
   version: string;
   systemMessage: string | null;
   userMessage: string | null;
@@ -145,17 +144,16 @@ describeSmoke('Production Smoke Tests', () => {
         const body = (await response.json()) as PromptResponse;
 
         // Verify response structure
-        expect(body).toHaveProperty('id');
-        expect(body).toHaveProperty('name');
-        expect(body).toHaveProperty('description');
+        expect(body).toHaveProperty('promptId');
+        expect(body).toHaveProperty('promptName');
         expect(body).toHaveProperty('version');
         expect(body).toHaveProperty('systemMessage');
         expect(body).toHaveProperty('userMessage');
         expect(body).toHaveProperty('config');
 
         // Verify types
-        expect(typeof body.id).toBe('string');
-        expect(typeof body.name).toBe('string');
+        expect(typeof body.promptId).toBe('string');
+        expect(typeof body.promptName).toBe('string');
         expect(typeof body.version).toBe('string');
         expect(body.version).toMatch(/^\d+\.\d+\.\d+$/); // semver format
 

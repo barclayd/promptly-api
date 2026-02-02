@@ -85,6 +85,7 @@ export const handleRequest = async (
 
   // Verify API key
   const keyResult = await verifyApiKey(env, apiKey, 'prompt:read');
+
   if (!keyResult.valid) {
     const statusMap = {
       INVALID_KEY: 401,

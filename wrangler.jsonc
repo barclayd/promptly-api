@@ -5,6 +5,9 @@
   "observability": {
     "enabled": true
   },
+  "placement": {
+    "mode": "smart"
+  },
 
   // D1 Database binding
   "d1_databases": [

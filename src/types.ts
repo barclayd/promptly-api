@@ -81,12 +81,21 @@ export type CachedPrompt = {
 };
 
 /**
+ * Cached version data
+ */
+export type CachedVersion = {
+  version: string;
+  systemMessage: string | null;
+  userMessage: string | null;
+  config: Record<string, unknown>;
+};
+
+/**
  * API response for a prompt
  */
 export type PromptResponse = {
-  id: string;
-  name: string;
-  description: string;
+  promptId: string;
+  promptName: string;
   version: string;
   systemMessage: string | null;
   userMessage: string | null;
