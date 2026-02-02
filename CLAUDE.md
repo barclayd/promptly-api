@@ -58,6 +58,23 @@ test/
 - **Cache**: KV Namespace (60s TTL)
 - **Auth**: Better Auth API Key plugin (SHA-256 hashed keys)
 
+## Caching
+
+**What's cached:**
+- API keys (`apikey:{hash}`) - org ID, permissions, enabled, expiry
+- Prompts (`prompt:{id}`) - id, name, description, org ID
+
+**What's NOT cached:**
+- Prompt versions - always fetched fresh from D1
+
+**TTL Strategy:**
+All cache entries use a 60-second TTL.
+
+Why 60 seconds?
+- **Short enough**: Changes propagate within 1 minute without explicit invalidation
+- **Long enough**: Handles burst traffic without hammering D1
+- **Simple**: No complex invalidation logic required for edge cases
+
 ## API Endpoint
 
 ```
@@ -104,6 +121,13 @@ Authorization: Bearer <api_key>
 3. API keys are SHA-256 hashed and stored as base64url
 4. Permissions format: `{"resource": ["action1", "action2"]}`
 5. Versions are stored as separate major/minor/patch integers
+
+## Code Style
+
+- **No inline if statements** - always use braces and newlines
+- **Types over interfaces** - use `type` unless extending is needed
+- **Arrow functions** - use `const fn = () => {}` over `function fn() {}`
+- **Tests require deployment** - smoke tests run against production API
 
 ---
 

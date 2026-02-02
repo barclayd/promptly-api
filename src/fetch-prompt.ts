@@ -10,39 +10,47 @@ import type {
 /**
  * Format semver from major/minor/patch columns
  */
-function formatVersion(
+const formatVersion = (
   major: number | null,
   minor: number | null,
   patch: number | null,
-): string {
-  if (major === null) return 'draft';
+): string => {
+  if (major === null) {
+    return 'draft';
+  }
   return `${major}.${minor ?? 0}.${patch ?? 0}`;
-}
+};
 
 /**
  * Parse semver string into components
  */
-function parseVersion(
+const parseVersion = (
   version: string,
-): { major: number; minor: number; patch: number } | null {
+): { major: number; minor: number; patch: number } | null => {
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
+  const [, majorStr, minorStr, patchStr] = match;
+  if (!majorStr || !minorStr || !patchStr) {
+    return null;
+  }
   return {
-    major: Number.parseInt(match[1]!, 10),
-    minor: Number.parseInt(match[2]!, 10),
-    patch: Number.parseInt(match[3]!, 10),
+    major: Number.parseInt(majorStr, 10),
+    minor: Number.parseInt(minorStr, 10),
+    patch: Number.parseInt(patchStr, 10),
   };
-}
+};
 
 /**
  * Fetch a prompt by ID with optional version
  */
-export async function fetchPrompt(
+export const fetchPrompt = async (
   env: Env,
   promptId: string,
   organizationId: string,
   version?: string,
-): Promise<PromptResponse | { error: string; code: string }> {
+): Promise<PromptResponse | { error: string; code: string }> => {
   const cacheKey = `prompt:${promptId}`;
 
   // Check cache for prompt metadata
@@ -137,4 +145,4 @@ export async function fetchPrompt(
     userMessage: versionResult.user_message,
     config: JSON.parse(versionResult.config) as Record<string, unknown>,
   };
-}
+};

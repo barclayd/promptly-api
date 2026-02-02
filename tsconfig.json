@@ -4,10 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ESNext"],
-    "types": [
-      "@cloudflare/workers-types/2023-07-01",
-      "@cloudflare/vitest-pool-workers"
-    ],
+    "types": ["@cloudflare/workers-types/2023-07-01", "@types/bun"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,

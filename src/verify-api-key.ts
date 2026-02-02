@@ -11,7 +11,7 @@ import type {
  * Hash an API key using SHA-256 and encode as base64url (no padding)
  * This matches Better Auth's API key storage format
  */
-async function hashApiKey(apiKey: string): Promise<string> {
+const hashApiKey = async (apiKey: string): Promise<string> => {
   const encoder = new TextEncoder();
   const data = encoder.encode(apiKey);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -19,33 +19,37 @@ async function hashApiKey(apiKey: string): Promise<string> {
   // Convert to base64url without padding
   const base64 = btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
+};
 
 /**
  * Check if permissions object grants a specific permission
  * Permission format: "resource:action" (e.g., "prompt:read")
  */
-function hasPermission(
+const hasPermission = (
   permissions: PermissionsObject,
   requiredPermission: string,
-): boolean {
+): boolean => {
   const [resource, action] = requiredPermission.split(':');
-  if (!resource || !action) return false;
+  if (!resource || !action) {
+    return false;
+  }
 
   const resourcePermissions = permissions[resource];
-  if (!resourcePermissions) return false;
+  if (!resourcePermissions) {
+    return false;
+  }
 
   return resourcePermissions.includes(action);
-}
+};
 
 /**
  * Verify an API key and check permissions
  */
-export async function verifyApiKey(
+export const verifyApiKey = async (
   env: Env,
   apiKey: string,
   requiredPermission: string,
-): Promise<ApiKeyResult> {
+): Promise<ApiKeyResult> => {
   const hashedKey = await hashApiKey(apiKey);
   const cacheKey = `apikey:${hashedKey}`;
 
@@ -106,4 +110,4 @@ export async function verifyApiKey(
     organizationId: cachedData.organizationId,
     permissions: cachedData.permissions,
   };
-}
+};

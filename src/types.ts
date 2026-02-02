@@ -1,15 +1,15 @@
 /**
  * Cloudflare Worker environment bindings
  */
-export interface Env {
+export type Env = {
   promptly: D1Database;
   PROMPTS_CACHE: KVNamespace;
-}
+};
 
 /**
  * API key with organization lookup result from D1 database
  */
-export interface ApiKeyWithOrgRecord {
+export type ApiKeyWithOrgRecord = {
   id: string;
   key: string;
   user_id: string;
@@ -17,7 +17,7 @@ export interface ApiKeyWithOrgRecord {
   enabled: number; // 0 or 1
   expires_at: number | null; // unix timestamp ms
   organization_id: string; // from member table join
-}
+};
 
 /**
  * Permissions format from Better Auth: {"resource": ["action1", "action2"]}
@@ -27,12 +27,12 @@ export type PermissionsObject = Record<string, string[]>;
 /**
  * Cached API key data
  */
-export interface CachedApiKey {
+export type CachedApiKey = {
   organizationId: string;
   permissions: PermissionsObject;
   enabled: boolean;
   expiresAt: number | null;
-}
+};
 
 /**
  * API key verification result
@@ -47,18 +47,18 @@ export type ApiKeyResult =
 /**
  * Prompt record from D1 database
  */
-export interface PromptRecord {
+export type PromptRecord = {
   id: string;
   organization_id: string;
   name: string;
   description: string;
   deleted_at: number | null;
-}
+};
 
 /**
  * Prompt version record from D1 database
  */
-export interface PromptVersionRecord {
+export type PromptVersionRecord = {
   id: string;
   prompt_id: string;
   major: number | null;
@@ -68,22 +68,22 @@ export interface PromptVersionRecord {
   user_message: string | null;
   config: string;
   published_at: number | null;
-}
+};
 
 /**
  * Cached prompt data
  */
-export interface CachedPrompt {
+export type CachedPrompt = {
   id: string;
   organizationId: string;
   name: string;
   description: string;
-}
+};
 
 /**
  * API response for a prompt
  */
-export interface PromptResponse {
+export type PromptResponse = {
   id: string;
   name: string;
   description: string;
@@ -91,12 +91,12 @@ export interface PromptResponse {
   systemMessage: string | null;
   userMessage: string | null;
   config: Record<string, unknown>;
-}
+};
 
 /**
  * Error response
  */
-export interface ErrorResponse {
+export type ErrorResponse = {
   error: string;
   code: string;
-}
+};

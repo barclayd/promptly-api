@@ -12,7 +12,7 @@ const CORS_HEADERS = {
 /**
  * Create a JSON response with CORS headers
  */
-function jsonResponse<T>(data: T, status = 200): Response {
+const jsonResponse = <T>(data: T, status = 200): Response => {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -20,22 +20,26 @@ function jsonResponse<T>(data: T, status = 200): Response {
       ...CORS_HEADERS,
     },
   });
-}
+};
 
 /**
  * Create an error response
  */
-function errorResponse(error: string, code: string, status: number): Response {
+const errorResponse = (
+  error: string,
+  code: string,
+  status: number,
+): Response => {
   return jsonResponse<ErrorResponse>({ error, code }, status);
-}
+};
 
 /**
  * Handle incoming requests
  */
-export async function handleRequest(
+export const handleRequest = async (
   request: Request,
   env: Env,
-): Promise<Response> {
+): Promise<Response> => {
   const url = new URL(request.url);
 
   // Handle CORS preflight
@@ -125,4 +129,4 @@ export async function handleRequest(
   }
 
   return jsonResponse<PromptResponse>(promptResult);
-}
+};

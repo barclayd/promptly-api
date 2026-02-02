@@ -11,12 +11,12 @@ import { describe, expect, it } from 'bun:test';
 const API_URL = process.env.API_URL || 'https://api.promptlycms.com';
 const API_KEY = process.env.TEST_PROMPT_API_KEY;
 
-interface ErrorResponse {
+type ErrorResponse = {
   error: string;
   code: string;
-}
+};
 
-interface PromptResponse {
+type PromptResponse = {
   id: string;
   name: string;
   description: string;
@@ -24,7 +24,7 @@ interface PromptResponse {
   systemMessage: string | null;
   userMessage: string | null;
   config: Record<string, unknown>;
-}
+};
 
 // Skip all tests if no API key is configured
 const describeSmoke = API_KEY ? describe : describe.skip;
