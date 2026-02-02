@@ -61,19 +61,27 @@ test/
 ## Caching
 
 **What's cached:**
-- API keys (`apikey:{hash}`) - org ID, permissions, enabled, expiry
-- Prompts (`prompt:{id}`) - id, name, description, org ID
+- API keys (`apikey:{hash}`) - org ID, permissions, enabled, expiry (60s TTL)
+- Prompts (`prompt:{id}`) - id, name, description, org ID (60s TTL)
+- Versions (`version:{id}:{version}`) - version data, messages, config
+  - Specific versions (e.g., `1.0.0`): **indefinite** (published versions can't be edited)
+  - Latest (`version:{id}:latest`): 60s TTL
 
-**What's NOT cached:**
-- Prompt versions - always fetched fresh from D1
+**Why separate prompt and version cache entries?**
+
+Prompt metadata (name, orgId) and version content (messages, config) have different mutability:
+- Prompt name *can* change → needs 60s TTL to propagate updates
+- Version content *can't* change once published → safe to cache indefinitely
+
+If combined into one entry, we'd have to choose:
+- 60s TTL: loses the "cache forever" benefit for immutable version content
+- Indefinite: prompt name changes would never propagate for specific version requests
+
+Separate entries let us apply the right TTL to each. The tradeoff is 2 KV lookups per request instead of 1.
 
 **TTL Strategy:**
-All cache entries use a 60-second TTL.
-
-Why 60 seconds?
-- **Short enough**: Changes propagate within 1 minute without explicit invalidation
-- **Long enough**: Handles burst traffic without hammering D1
-- **Simple**: No complex invalidation logic required for edge cases
+- 60s for mutable data (API keys, prompt metadata, "latest" version pointer)
+- Indefinite for immutable data (specific published versions)
 
 ## API Endpoint
 
@@ -85,9 +93,8 @@ Authorization: Bearer <api_key>
 **Response:**
 ```json
 {
-  "id": "...",
-  "name": "...",
-  "description": "...",
+  "promptId": "...",
+  "promptName": "...",
   "version": "1.0.0",
   "systemMessage": "...",
   "userMessage": "...",
@@ -117,7 +124,7 @@ Authorization: Bearer <api_key>
 ## Key Conventions
 
 1. Use `.ts` file extensions in imports
-2. Cache keys: `apikey:{hash}`, `prompt:{id}`
+2. Cache keys: `apikey:{hash}`, `prompt:{id}`, `version:{id}:{version|latest}`
 3. API keys are SHA-256 hashed and stored as base64url
 4. Permissions format: `{"resource": ["action1", "action2"]}`
 5. Versions are stored as separate major/minor/patch integers
@@ -216,6 +223,16 @@ Bun automatically loads `.env` files.
 - NO preview namespace needed - wrangler simulates KV locally in-memory
 - Don't use `--preview` flag unless you want remote staging storage
 
+**Inspect cache entries:**
+```bash
+# List all keys for a prompt
+bunx wrangler kv key list --binding=PROMPTS_CACHE --remote | jq '.[] | select(.name | contains("PROMPT_ID"))'
+
+# Get a specific cache entry
+bunx wrangler kv key get --binding=PROMPTS_CACHE "version:PROMPT_ID:1.0.0" --remote
+```
+Keys with `expiration` field have a TTL; keys without it are cached indefinitely.
+
 ### Logging in Workers
 
 - `console.log` with JSON is optimal for Cloudflare Workers
@@ -249,3 +266,46 @@ Bun automatically loads `.env` files.
 - Use `@typescript/native-preview` for fast type checking
 - Provides `tsgo` binary
 - Much faster than standard `tsc`
+
+### KV Cache Behavior
+
+- KV is **per-edge-location** - cache populated in London won't be immediately available in Dublin
+- First request to any new edge location will always be a cache miss
+- KV is eventually consistent - writes propagate to edges on-demand
+- This means "cold" requests from new locations will be slower (~500ms vs ~150ms)
+
+### Cache Write Timing
+
+- Always `await` cache writes - fire-and-forget can cause misses
+- Without await, the response may return before the write completes
+- Subsequent requests may miss cache if the write wasn't finished
+
+```typescript
+// Wrong - may not complete before response
+setInCache(kv, key, value);
+
+// Correct - ensures write completes
+await setInCache(kv, key, value);
+```
+
+### Performance Expectations
+
+After optimization, typical latencies:
+- **Warm request (all cache hits)**: ~140-180ms total
+  - Worker processing: 1-11ms
+  - Network overhead: ~130ms (TLS handshake + round trip)
+- **Cold request (cache misses)**: ~400-600ms total
+  - Includes D1 queries + cache writes
+
+The ~130ms network overhead is unavoidable - it's TLS handshake + round trip latency. This is normal for HTTPS APIs.
+
+### Client Connection Reuse
+
+For clients calling from AWS Lambda, enable keep-alive to reduce TLS overhead:
+```typescript
+// Set environment variable
+AWS_NODEJS_CONNECTION_REUSE_ENABLED=1
+
+// Or create agent outside handler
+const agent = new https.Agent({ keepAlive: true });
+```
