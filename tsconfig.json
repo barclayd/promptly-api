@@ -1,0 +1,21 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"lib": ["ESNext"],
+		"types": ["@cloudflare/workers-types/2023-07-01", "@cloudflare/vitest-pool-workers"],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"verbatimModuleSyntax": true,
+		"allowImportingTsExtensions": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true
+	},
+	"include": ["src/**/*", "test/**/*"],
+	"exclude": ["node_modules"]
+}
