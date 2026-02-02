@@ -23,9 +23,8 @@ export async function fetchPrompt(
 
 	if (!cachedPrompt) {
 		// Query D1 for prompt
-		const promptResult = await env.DB.prepare(
-			'SELECT id, organization_id, name, description FROM prompt WHERE id = ?',
-		)
+		const promptResult = await env.promptly
+			.prepare('SELECT id, organization_id, name, description FROM prompt WHERE id = ?')
 			.bind(promptId)
 			.first<PromptRecord>();
 
@@ -53,14 +52,16 @@ export async function fetchPrompt(
 
 	if (version) {
 		// Fetch specific version
-		versionResult = await env.DB.prepare(
-			'SELECT id, prompt_id, version, content, published FROM prompt_version WHERE prompt_id = ? AND version = ? AND published = 1',
-		)
+		versionResult = await env.promptly
+			.prepare(
+				'SELECT id, prompt_id, version, content, published FROM prompt_version WHERE prompt_id = ? AND version = ? AND published = 1',
+			)
 			.bind(promptId, version)
 			.first<PromptVersionRecord>();
 	} else {
 		// Fetch latest published version (ordered by semver parts)
-		versionResult = await env.DB.prepare(`
+		versionResult = await env.promptly
+			.prepare(`
 			SELECT id, prompt_id, version, content, published
 			FROM prompt_version
 			WHERE prompt_id = ? AND published = 1

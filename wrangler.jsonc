@@ -7,21 +7,18 @@
   // D1 Database binding
   "d1_databases": [
     {
-      "binding": "DB",
-      "database_name": "promptly-db",
-      "database_id": "YOUR_D1_DATABASE_ID"
+      "binding": "promptly",
+      "database_name": "promptly",
+      "database_id": "eadc5f7c-e195-4bd0-bcb1-8e4d2950606b",
+      "migrations_dir": "./migrations/drizzle"
     }
   ],
 
   // KV Namespace binding for caching
-  // Run: bunx wrangler kv:namespace create PROMPTS_CACHE
-  // Run: bunx wrangler kv:namespace create PROMPTS_CACHE --preview
-  // Then update the IDs below
   "kv_namespaces": [
     {
       "binding": "PROMPTS_CACHE",
-      "id": "YOUR_KV_NAMESPACE_ID",
-      "preview_id": "YOUR_KV_PREVIEW_NAMESPACE_ID"
+      "id": "fe422f717c1b4a8295656d6e494161a3"
     }
   ]
 }

@@ -28,9 +28,10 @@ export async function verifyApiKey(
 
 	if (!cachedData) {
 		// Query D1 database
-		const result = await env.DB.prepare(
-			'SELECT id, hashed_key, organization_id, permissions, enabled, expires_at FROM apikey WHERE hashed_key = ?',
-		)
+		const result = await env.promptly
+			.prepare(
+				'SELECT id, hashed_key, organization_id, permissions, enabled, expires_at FROM apikey WHERE hashed_key = ?',
+			)
 			.bind(hashedKey)
 			.first<ApiKeyRecord>();
 
