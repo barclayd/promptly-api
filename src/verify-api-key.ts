@@ -1,4 +1,4 @@
-import { getFromCache, setInCache } from './cache.ts';
+import { getFromCache, L2_TTL, setInCache } from './cache.ts';
 import type {
   ApiKeyResult,
   ApiKeyWithOrgRecord,
@@ -89,7 +89,7 @@ export const verifyApiKey = async (
       expiresAt: result.expires_at,
     };
 
-    await setInCache(env.PROMPTS_CACHE, cacheKey, cachedData);
+    await setInCache(env.PROMPTS_CACHE, cacheKey, cachedData, L2_TTL);
   }
 
   // Validate the key
