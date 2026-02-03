@@ -1,4 +1,4 @@
-import { getFromCache, setInCache } from './cache.ts';
+import { getFromCache, L2_TTL, setInCache } from './cache.ts';
 import type {
   CachedPrompt,
   CachedVersion,
@@ -8,8 +8,8 @@ import type {
   PromptVersionRecord,
 } from './types.ts';
 
-// TTL for "latest" version cache (seconds)
-const LATEST_VERSION_TTL = 60;
+// TTL for "latest" version cache - use same as L2 default (5 min)
+const LATEST_VERSION_TTL = L2_TTL;
 
 /**
  * Format semver from major/minor/patch columns
@@ -142,9 +142,9 @@ export const fetchPrompt = async (
         userMessage: versionResult.user_message,
         config: JSON.parse(versionResult.config) as Record<string, unknown>,
       };
-      // Cache version: indefinitely for specific versions, 60s for latest
-      const ttl = version ? 0 : LATEST_VERSION_TTL;
-      await setInCache(env.PROMPTS_CACHE, versionCacheKey, versionData, ttl);
+      // Cache version: indefinitely for specific versions, L2_TTL for latest
+      const kvTtl = version ? 0 : LATEST_VERSION_TTL;
+      await setInCache(env.PROMPTS_CACHE, versionCacheKey, versionData, kvTtl);
     } else {
       versionData = null;
     }
@@ -188,15 +188,15 @@ export const fetchPrompt = async (
         config: JSON.parse(versionResult.config) as Record<string, unknown>,
       };
       // Cache both in parallel
-      const ttl = version ? 0 : LATEST_VERSION_TTL;
+      const kvTtl = version ? 0 : LATEST_VERSION_TTL;
       await Promise.all([
-        setInCache(env.PROMPTS_CACHE, promptCacheKey, promptData),
-        setInCache(env.PROMPTS_CACHE, versionCacheKey, versionData, ttl),
+        setInCache(env.PROMPTS_CACHE, promptCacheKey, promptData, L2_TTL),
+        setInCache(env.PROMPTS_CACHE, versionCacheKey, versionData, kvTtl),
       ]);
     } else {
       versionData = null;
       // Still cache prompt
-      await setInCache(env.PROMPTS_CACHE, promptCacheKey, promptData);
+      await setInCache(env.PROMPTS_CACHE, promptCacheKey, promptData, L2_TTL);
     }
   }
 
