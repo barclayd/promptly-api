@@ -1,6 +1,6 @@
 import type { Env } from './types.ts';
 
-const CACHE_TTL = 60; // 60 seconds
+const CACHE_TTL = 60 * 5; // 300 seconds
 
 /**
  * Retrieve a value from KV cache
