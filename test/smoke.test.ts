@@ -222,4 +222,35 @@ describeSmoke('Production Smoke Tests', () => {
       expect(response.headers.get('Content-Type')).toBe('application/json');
     });
   });
+
+  describe('Rate Limit Headers', () => {
+    const TEST_PROMPT_ID = process.env.TEST_PROMPT_ID;
+    const describeWithPrompt = TEST_PROMPT_ID ? describe : describe.skip;
+
+    describeWithPrompt('on successful responses', () => {
+      it('includes X-RateLimit headers', async () => {
+        const response = await fetch(`${API_URL}/prompts/${TEST_PROMPT_ID}`, {
+          headers: { Authorization: `Bearer ${API_KEY}` },
+        });
+
+        expect(response.status).toBe(200);
+
+        const limit = response.headers.get('X-RateLimit-Limit');
+        const remaining = response.headers.get('X-RateLimit-Remaining');
+        const reset = response.headers.get('X-RateLimit-Reset');
+
+        expect(limit).not.toBeNull();
+        expect(remaining).not.toBeNull();
+        expect(reset).not.toBeNull();
+
+        // Values should be valid numbers
+        expect(Number(limit)).toBeGreaterThan(0);
+        expect(Number(remaining)).toBeGreaterThanOrEqual(0);
+        expect(Number(reset)).toBeGreaterThan(0);
+
+        // Reset should be a unix timestamp in the future
+        expect(Number(reset)).toBeGreaterThan(Math.floor(Date.now() / 1000));
+      });
+    });
+  });
 });

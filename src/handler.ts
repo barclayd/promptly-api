@@ -1,5 +1,16 @@
 import { fetchPrompt } from './fetch-prompt.ts';
-import type { Env, ErrorResponse, PromptResponse } from './types.ts';
+import type {
+  Env,
+  ErrorResponse,
+  PromptResponse,
+  RateLimitResponse,
+  UsageStatus,
+} from './types.ts';
+import {
+  checkUsageLimit,
+  getNextMonthResetUnix,
+  incrementUsage,
+} from './usage.ts';
 import { verifyApiKey } from './verify-api-key.ts';
 
 const CORS_HEADERS = {
@@ -10,14 +21,19 @@ const CORS_HEADERS = {
 };
 
 /**
- * Create a JSON response with CORS headers
+ * Create a JSON response with CORS headers and optional extra headers
  */
-const jsonResponse = <T>(data: T, status = 200): Response => {
+const jsonResponse = <T>(
+  data: T,
+  status = 200,
+  extraHeaders?: Record<string, string>,
+): Response => {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json',
       ...CORS_HEADERS,
+      ...extraHeaders,
     },
   });
 };
@@ -34,11 +50,23 @@ const errorResponse = (
 };
 
 /**
+ * Build rate limit headers from usage status
+ */
+const rateLimitHeaders = (usage: UsageStatus): Record<string, string> => {
+  return {
+    'X-RateLimit-Limit': String(usage.limit),
+    'X-RateLimit-Remaining': String(usage.remaining),
+    'X-RateLimit-Reset': String(getNextMonthResetUnix()),
+  };
+};
+
+/**
  * Handle incoming requests
  */
 export const handleRequest = async (
   request: Request,
   env: Env,
+  ctx: ExecutionContext,
 ): Promise<Response> => {
   const url = new URL(request.url);
 
@@ -108,6 +136,33 @@ export const handleRequest = async (
     );
   }
 
+  // Check usage limits
+  const usageStatus = await checkUsageLimit(env, keyResult.organizationId);
+
+  if (!usageStatus.allowed) {
+    const resetUnix = getNextMonthResetUnix();
+    const retryAfter = Math.max(0, resetUnix - Math.floor(Date.now() / 1000));
+
+    return jsonResponse<RateLimitResponse>(
+      {
+        error: `Monthly API limit reached (${usageStatus.used}/${usageStatus.limit} calls). Upgrade to Pro for 50,000 calls/month.`,
+        code: 'USAGE_LIMIT_EXCEEDED',
+        usage: {
+          limit: usageStatus.limit,
+          used: usageStatus.used,
+          remaining: 0,
+          resetAt: usageStatus.resetAt,
+        },
+        upgradeUrl: 'https://app.promptlycms.com/settings?tab=billing',
+      },
+      429,
+      {
+        'Retry-After': String(retryAfter),
+        ...rateLimitHeaders(usageStatus),
+      },
+    );
+  }
+
   // Get optional version parameter
   const version = url.searchParams.get('version') ?? undefined;
 
@@ -129,5 +184,12 @@ export const handleRequest = async (
     return errorResponse(promptResult.error, promptResult.code, status);
   }
 
-  return jsonResponse<PromptResponse>(promptResult);
+  // Increment usage counter (fire-and-forget)
+  ctx.waitUntil(incrementUsage(env, keyResult.organizationId));
+
+  return jsonResponse<PromptResponse>(
+    promptResult,
+    200,
+    rateLimitHeaders(usageStatus),
+  );
 };
