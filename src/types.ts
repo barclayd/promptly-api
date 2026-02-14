@@ -109,3 +109,44 @@ export type ErrorResponse = {
   error: string;
   code: string;
 };
+
+/**
+ * Result of checking usage limits
+ */
+export type UsageStatus = {
+  allowed: boolean;
+  limit: number;
+  used: number;
+  remaining: number;
+  resetAt: string; // ISO 8601 timestamp of next month start
+};
+
+/**
+ * L1 cache shape for usage data
+ */
+export type CachedUsage = {
+  count: number;
+  limit: number;
+  period: string;
+};
+
+/**
+ * Subscription record from D1
+ */
+export type SubscriptionRecord = {
+  plan: string;
+  status: string;
+};
+
+/**
+ * Rate limit error response
+ */
+export type RateLimitResponse = ErrorResponse & {
+  usage: {
+    limit: number;
+    used: number;
+    remaining: number;
+    resetAt: string;
+  };
+  upgradeUrl: string;
+};
