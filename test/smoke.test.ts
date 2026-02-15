@@ -115,6 +115,27 @@ skipWithoutKey('returns 405 for non-GET methods', async () => {
   });
 });
 
+// Prompt listing
+
+skipWithoutKey('lists prompts with correct structure', async () => {
+  const response = await fetch(`${API_URL}/prompts`, {
+    headers: { Authorization: `Bearer ${API_KEY}` },
+  });
+
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as PromptResponse[];
+
+  expect(Array.isArray(body)).toBe(true);
+
+  const prompt = body[0];
+  if (prompt) {
+    expect(typeof prompt.promptId).toBe('string');
+    expect(typeof prompt.promptName).toBe('string');
+    expect(prompt.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(typeof prompt.config).toBe('object');
+  }
+});
+
 // Prompt fetching
 
 skipWithoutKey('returns 404 for non-existent prompt', async () => {

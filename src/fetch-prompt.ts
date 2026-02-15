@@ -80,6 +80,48 @@ const buildVersionQuery = (
 };
 
 /**
+ * Fetch all prompts for an organization with their latest published versions
+ */
+export const fetchPrompts = async (
+  env: Env,
+  organizationId: string,
+): Promise<PromptResponse[]> => {
+  const results = await env.promptly
+    .prepare(
+      `SELECT p.id, p.name,
+              pv.major, pv.minor, pv.patch,
+              pv.system_message, pv.user_message, pv.config
+       FROM prompt p
+       INNER JOIN prompt_version pv ON pv.prompt_id = p.id
+       WHERE p.organization_id = ?
+         AND p.deleted_at IS NULL
+         AND pv.published_at IS NOT NULL
+         AND pv.id = (
+           SELECT pv2.id FROM prompt_version pv2
+           WHERE pv2.prompt_id = p.id
+             AND pv2.published_at IS NOT NULL
+           ORDER BY pv2.major DESC, pv2.minor DESC, pv2.patch DESC
+           LIMIT 1
+         )`,
+    )
+    .bind(organizationId)
+    .all();
+
+  return results.results.map((row) => ({
+    promptId: row.id as string,
+    promptName: row.name as string,
+    version: formatVersion(
+      row.major as number | null,
+      row.minor as number | null,
+      row.patch as number | null,
+    ),
+    systemMessage: row.system_message as string | null,
+    userMessage: row.user_message as string | null,
+    config: JSON.parse(row.config as string) as Record<string, unknown>,
+  }));
+};
+
+/**
  * Fetch a prompt by ID with optional version
  */
 export const fetchPrompt = async (
