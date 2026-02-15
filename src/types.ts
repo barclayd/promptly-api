@@ -91,6 +91,14 @@ export type CachedVersion = {
 };
 
 /**
+ * Published version summary (for include_versions)
+ */
+export type PublishedVersion = {
+  version: string;
+  userMessage: string | null;
+};
+
+/**
  * API response for a prompt
  */
 export type PromptResponse = {
@@ -100,6 +108,7 @@ export type PromptResponse = {
   systemMessage: string | null;
   userMessage: string | null;
   config: Record<string, unknown>;
+  publishedVersions?: PublishedVersion[];
 };
 
 /**
