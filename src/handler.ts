@@ -1,4 +1,4 @@
-import { fetchPrompt } from './fetch-prompt.ts';
+import { fetchPrompt, fetchPrompts } from './fetch-prompt.ts';
 import type {
   Env,
   ErrorResponse,
@@ -83,15 +83,12 @@ export const handleRequest = async (
     return errorResponse('Method not allowed', 'METHOD_NOT_ALLOWED', 405);
   }
 
-  // Parse route: GET /prompts/:promptId
-  const match = url.pathname.match(/^\/prompts\/([^/]+)$/);
-  if (!match) {
-    return errorResponse('Not found', 'NOT_FOUND', 404);
-  }
+  // Parse routes
+  const singleMatch = url.pathname.match(/^\/prompts\/([^/]+)$/);
+  const listMatch = url.pathname === '/prompts';
 
-  const promptId = match[1];
-  if (!promptId) {
-    return errorResponse('Missing prompt ID', 'BAD_REQUEST', 400);
+  if (!singleMatch && !listMatch) {
+    return errorResponse('Not found', 'NOT_FOUND', 404);
   }
 
   // Extract and validate Authorization header
@@ -162,6 +159,20 @@ export const handleRequest = async (
       },
     );
   }
+
+  // List all prompts
+  if (listMatch) {
+    const prompts = await fetchPrompts(env, keyResult.organizationId);
+    ctx.waitUntil(incrementUsage(env, keyResult.organizationId));
+    return jsonResponse<PromptResponse[]>(
+      prompts,
+      200,
+      rateLimitHeaders(usageStatus),
+    );
+  }
+
+  // Single prompt
+  const promptId = singleMatch?.[1] as string;
 
   // Get optional version parameter
   const version = url.searchParams.get('version') ?? undefined;
