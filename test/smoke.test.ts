@@ -17,6 +17,11 @@ type ErrorResponse = {
   code: string;
 };
 
+type PublishedVersion = {
+  version: string;
+  userMessage: string | null;
+};
+
 type PromptResponse = {
   promptId: string;
   promptName: string;
@@ -24,6 +29,7 @@ type PromptResponse = {
   systemMessage: string | null;
   userMessage: string | null;
   config: Record<string, unknown>;
+  publishedVersions?: PublishedVersion[];
 };
 
 const skipWithoutKey = API_KEY ? test : test.skip;
@@ -135,6 +141,76 @@ skipWithoutKey('lists prompts with correct structure', async () => {
     expect(typeof prompt.config).toBe('object');
   }
 });
+
+skipWithoutKey(
+  'lists prompts with published versions when requested',
+  async () => {
+    const response = await fetch(`${API_URL}/prompts?include_versions=true`, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as PromptResponse[];
+    expect(Array.isArray(body)).toBe(true);
+
+    const prompt = body[0];
+    if (prompt) {
+      expect(Array.isArray(prompt.publishedVersions)).toBe(true);
+      if (prompt.publishedVersions && prompt.publishedVersions.length > 0) {
+        const ver = prompt.publishedVersions[0];
+        if (ver) {
+          expect(ver.version).toMatch(/^\d+\.\d+\.\d+$/);
+          expect(ver).toHaveProperty('userMessage');
+        }
+      }
+    }
+  },
+);
+
+skipWithoutPrompt(
+  'includes publishedVersions containing the latest version',
+  async () => {
+    const response = await fetch(`${API_URL}/prompts?include_versions=true`, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as PromptResponse[];
+
+    const prompt = body.find((p) => p.promptId === TEST_PROMPT_ID);
+    if (!prompt) {
+      throw new Error(`TEST_PROMPT_ID ${TEST_PROMPT_ID} not found in response`);
+    }
+
+    const versions = prompt.publishedVersions;
+    if (!versions || versions.length === 0) {
+      throw new Error('publishedVersions missing or empty');
+    }
+
+    // Every entry should have a valid semver and userMessage field
+    for (const ver of versions) {
+      expect(ver.version).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(ver).toHaveProperty('userMessage');
+    }
+
+    // Versions should be in ascending semver order
+    const versionStrings = versions.map((v) => v.version);
+    const compareSemver = (a: string, b: string): number => {
+      const ap = a.split('.').map(Number);
+      const bp = b.split('.').map(Number);
+      return (
+        (ap[0] ?? 0) - (bp[0] ?? 0) ||
+        (ap[1] ?? 0) - (bp[1] ?? 0) ||
+        (ap[2] ?? 0) - (bp[2] ?? 0)
+      );
+    };
+    const sorted = [...versionStrings].sort(compareSemver);
+    expect(versionStrings).toEqual(sorted);
+
+    // The latest version from the prompt should appear in publishedVersions
+    expect(versionStrings).toContain(prompt.version);
+  },
+);
 
 // Prompt fetching
 

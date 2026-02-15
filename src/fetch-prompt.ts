@@ -6,6 +6,7 @@ import type {
   PromptRecord,
   PromptResponse,
   PromptVersionRecord,
+  PublishedVersion,
 } from './types.ts';
 
 // TTL for "latest" version cache - use same as L2 default (5 min)
@@ -85,6 +86,7 @@ const buildVersionQuery = (
 export const fetchPrompts = async (
   env: Env,
   organizationId: string,
+  includeVersions = false,
 ): Promise<PromptResponse[]> => {
   const results = await env.promptly
     .prepare(
@@ -107,7 +109,7 @@ export const fetchPrompts = async (
     .bind(organizationId)
     .all();
 
-  return results.results.map((row) => ({
+  const prompts: PromptResponse[] = results.results.map((row) => ({
     promptId: row.id as string,
     promptName: row.name as string,
     version: formatVersion(
@@ -118,6 +120,44 @@ export const fetchPrompts = async (
     systemMessage: row.system_message as string | null,
     userMessage: row.user_message as string | null,
     config: JSON.parse(row.config as string) as Record<string, unknown>,
+  }));
+
+  if (!includeVersions) {
+    return prompts;
+  }
+
+  const versionsResult = await env.promptly
+    .prepare(
+      `SELECT pv.prompt_id, pv.major, pv.minor, pv.patch, pv.user_message
+       FROM prompt_version pv
+       INNER JOIN prompt p ON p.id = pv.prompt_id
+       WHERE p.organization_id = ?
+         AND p.deleted_at IS NULL
+         AND pv.published_at IS NOT NULL
+       ORDER BY pv.prompt_id, pv.major ASC, pv.minor ASC, pv.patch ASC`,
+    )
+    .bind(organizationId)
+    .all();
+
+  const versionsByPrompt = new Map<string, PublishedVersion[]>();
+  for (const row of versionsResult.results) {
+    const promptId = row.prompt_id as string;
+    if (!versionsByPrompt.has(promptId)) {
+      versionsByPrompt.set(promptId, []);
+    }
+    versionsByPrompt.get(promptId)?.push({
+      version: formatVersion(
+        row.major as number | null,
+        row.minor as number | null,
+        row.patch as number | null,
+      ),
+      userMessage: row.user_message as string | null,
+    });
+  }
+
+  return prompts.map((prompt) => ({
+    ...prompt,
+    publishedVersions: versionsByPrompt.get(prompt.promptId) ?? [],
   }));
 };
 

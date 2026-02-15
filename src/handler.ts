@@ -162,7 +162,12 @@ export const handleRequest = async (
 
   // List all prompts
   if (listMatch) {
-    const prompts = await fetchPrompts(env, keyResult.organizationId);
+    const includeVersions = url.searchParams.get('include_versions') === 'true';
+    const prompts = await fetchPrompts(
+      env,
+      keyResult.organizationId,
+      includeVersions,
+    );
     ctx.waitUntil(incrementUsage(env, keyResult.organizationId));
     return jsonResponse<PromptResponse[]>(
       prompts,
