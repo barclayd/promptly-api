@@ -22,6 +22,17 @@ const getCurrentPeriod = (): string => {
 };
 
 /**
+ * Get the current date string (YYYY-MM-DD) in UTC
+ */
+const getCurrentDate = (): string => {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(now.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+/**
  * Get the ISO 8601 timestamp for the start of the next month (UTC)
  */
 const getNextMonthReset = (): string => {
@@ -139,20 +150,25 @@ export const incrementUsage = async (
 ): Promise<void> => {
   try {
     const period = getCurrentPeriod();
+    const dailyPeriod = getCurrentDate();
     const now = Date.now();
 
-    // Atomic upsert - handles concurrent writes safely
-    await env.promptly
-      .prepare(
-        `INSERT INTO api_usage (organization_id, period, count, created_at, updated_at)
-        VALUES (?, ?, 1, ?, ?)
-        ON CONFLICT(organization_id, period)
-        DO UPDATE SET count = count + 1, updated_at = ?`,
-      )
-      .bind(organizationId, period, now, now, now)
-      .run();
+    const UPSERT_USAGE_SQL = `INSERT INTO api_usage (organization_id, period, count, created_at, updated_at)
+      VALUES (?, ?, 1, ?, ?)
+      ON CONFLICT(organization_id, period)
+      DO UPDATE SET count = count + 1, updated_at = ?`;
 
-    // Optimistically update L1 cache
+    // Batch both upserts into a single D1 round trip
+    await env.promptly.batch([
+      env.promptly
+        .prepare(UPSERT_USAGE_SQL)
+        .bind(organizationId, period, now, now, now),
+      env.promptly
+        .prepare(UPSERT_USAGE_SQL)
+        .bind(organizationId, dailyPeriod, now, now, now),
+    ]);
+
+    // Optimistically update L1 cache (monthly only - daily is write-only)
     const cacheKey = `usage:${organizationId}:${period}`;
     const cached = memoryCache.get<CachedUsage>(cacheKey);
     if (cached) {
@@ -164,7 +180,12 @@ export const incrementUsage = async (
     }
 
     console.log(
-      JSON.stringify({ event: 'usage_increment', organizationId, period }),
+      JSON.stringify({
+        event: 'usage_increment',
+        organizationId,
+        period,
+        dailyPeriod,
+      }),
     );
   } catch (error) {
     // Non-critical - log but don't throw
