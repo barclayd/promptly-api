@@ -6,7 +6,7 @@ import type {
   UsageStatus,
 } from './types.ts';
 
-const FREE_LIMIT = 5000;
+const FREE_LIMIT = 100000; // reset once enterprise plan is released
 const PRO_LIMIT = 50000;
 const USAGE_CACHE_TTL = 60; // seconds - shorter for better accuracy
 const PLAN_CACHE_TTL = 300; // seconds - plan changes are rare
