@@ -120,22 +120,35 @@ export type ErrorResponse = {
 };
 
 /**
+ * Subscription plan tier
+ */
+export type Plan = 'free' | 'pro' | 'enterprise';
+
+/**
+ * Plan info with optional limit (null = unlimited for enterprise)
+ */
+export type PlanInfo = {
+  plan: Plan;
+  limit: number | null;
+};
+
+/**
  * Result of checking usage limits
  */
 export type UsageStatus = {
   allowed: boolean;
-  limit: number;
+  plan: Plan;
+  limit: number | null;
   used: number;
-  remaining: number;
+  remaining: number | null;
   resetAt: string; // ISO 8601 timestamp of next month start
 };
 
 /**
- * L1 cache shape for usage data
+ * L1 cache shape for usage data (plan info lives in separate plan:{orgId} cache)
  */
 export type CachedUsage = {
   count: number;
-  limit: number;
   period: string;
 };
 

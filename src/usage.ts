@@ -2,11 +2,12 @@ import { memoryCache } from './memory-cache.ts';
 import type {
   CachedUsage,
   Env,
+  PlanInfo,
   SubscriptionRecord,
   UsageStatus,
 } from './types.ts';
 
-const FREE_LIMIT = 100000; // reset once enterprise plan is released
+const FREE_LIMIT = 5000;
 const PRO_LIMIT = 50000;
 const USAGE_CACHE_TTL = 60; // seconds - shorter for better accuracy
 const PLAN_CACHE_TTL = 300; // seconds - plan changes are rare
@@ -54,16 +55,16 @@ const getNextMonthResetUnix = (): number => {
 };
 
 /**
- * Look up the plan limit for an organization
+ * Look up the plan info for an organization
  */
-const getPlanLimit = async (
+const getPlanInfo = async (
   env: Env,
   organizationId: string,
-): Promise<number> => {
+): Promise<PlanInfo> => {
   const cacheKey = `plan:${organizationId}`;
 
   // Check L1 cache
-  const cached = memoryCache.get<number>(cacheKey);
+  const cached = memoryCache.get<PlanInfo>(cacheKey);
   if (cached !== null) {
     return cached;
   }
@@ -76,20 +77,49 @@ const getPlanLimit = async (
     .bind(organizationId)
     .first<SubscriptionRecord>();
 
-  let limit = FREE_LIMIT;
+  let planInfo: PlanInfo = { plan: 'free', limit: FREE_LIMIT };
 
   if (
     subscription &&
-    subscription.plan === 'pro' &&
     (subscription.status === 'active' || subscription.status === 'trialing')
   ) {
-    limit = PRO_LIMIT;
+    if (subscription.plan === 'enterprise') {
+      planInfo = { plan: 'enterprise', limit: null };
+    } else if (subscription.plan === 'pro') {
+      planInfo = { plan: 'pro', limit: PRO_LIMIT };
+    }
   }
 
   // Cache in L1 only
-  memoryCache.set(cacheKey, limit, PLAN_CACHE_TTL);
+  memoryCache.set(cacheKey, planInfo, PLAN_CACHE_TTL);
 
-  return limit;
+  return planInfo;
+};
+
+/**
+ * Build UsageStatus from count and plan info
+ */
+const buildUsageStatus = (count: number, planInfo: PlanInfo): UsageStatus => {
+  if (planInfo.limit === null) {
+    return {
+      allowed: true,
+      plan: planInfo.plan,
+      limit: null,
+      used: count,
+      remaining: null,
+      resetAt: getNextMonthReset(),
+    };
+  }
+
+  const remaining = Math.max(0, planInfo.limit - count);
+  return {
+    allowed: count < planInfo.limit,
+    plan: planInfo.plan,
+    limit: planInfo.limit,
+    used: count,
+    remaining,
+    resetAt: getNextMonthReset(),
+  };
 };
 
 /**
@@ -102,43 +132,30 @@ export const checkUsageLimit = async (
   const period = getCurrentPeriod();
   const cacheKey = `usage:${organizationId}:${period}`;
 
-  // Check L1 cache
+  // Check L1 cache for usage count
   const cached = memoryCache.get<CachedUsage>(cacheKey);
   if (cached) {
-    const remaining = Math.max(0, cached.limit - cached.count);
-    return {
-      allowed: cached.count < cached.limit,
-      limit: cached.limit,
-      used: cached.count,
-      remaining,
-      resetAt: getNextMonthReset(),
-    };
+    const planInfo = await getPlanInfo(env, organizationId);
+    return buildUsageStatus(cached.count, planInfo);
   }
 
-  // Cache miss - query D1 for count and plan limit in parallel
-  const [usageResult, limit] = await Promise.all([
+  // Cache miss - query D1 for count and plan info in parallel
+  const [usageResult, planInfo] = await Promise.all([
     env.promptly
       .prepare(
         'SELECT count FROM api_usage WHERE organization_id = ? AND period = ?',
       )
       .bind(organizationId, period)
       .first<{ count: number }>(),
-    getPlanLimit(env, organizationId),
+    getPlanInfo(env, organizationId),
   ]);
 
   const count = usageResult?.count ?? 0;
 
-  // Cache in L1 only (no KV writes)
-  memoryCache.set(cacheKey, { count, limit, period }, USAGE_CACHE_TTL);
+  // Cache usage count in L1 only (no KV writes)
+  memoryCache.set(cacheKey, { count, period }, USAGE_CACHE_TTL);
 
-  const remaining = Math.max(0, limit - count);
-  return {
-    allowed: count < limit,
-    limit,
-    used: count,
-    remaining,
-    resetAt: getNextMonthReset(),
-  };
+  return buildUsageStatus(count, planInfo);
 };
 
 /**

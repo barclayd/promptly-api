@@ -306,6 +306,7 @@ skipWithoutKey('returns JSON content type', async () => {
 
 // Rate limit headers
 
+// Assumes test account is free or pro plan (enterprise omits rate limit headers)
 skipWithoutPrompt('includes X-RateLimit headers on success', async () => {
   const response = await fetch(`${API_URL}/prompts/${TEST_PROMPT_ID}`, {
     headers: { Authorization: `Bearer ${API_KEY}` },

@@ -50,12 +50,18 @@ const errorResponse = (
 };
 
 /**
- * Build rate limit headers from usage status
+ * Build rate limit headers from usage status (undefined for unlimited plans)
  */
-const rateLimitHeaders = (usage: UsageStatus): Record<string, string> => {
+const rateLimitHeaders = (
+  usage: UsageStatus,
+): Record<string, string> | undefined => {
+  if (usage.limit === null) {
+    return undefined;
+  }
+
   return {
     'X-RateLimit-Limit': String(usage.limit),
-    'X-RateLimit-Remaining': String(usage.remaining),
+    'X-RateLimit-Remaining': String(usage.remaining ?? 0),
     'X-RateLimit-Reset': String(getNextMonthResetUnix()),
   };
 };
@@ -136,13 +142,18 @@ export const handleRequest = async (
   // Check usage limits
   const usageStatus = await checkUsageLimit(env, keyResult.organizationId);
 
-  if (!usageStatus.allowed) {
+  if (!usageStatus.allowed && usageStatus.limit !== null) {
     const resetUnix = getNextMonthResetUnix();
     const retryAfter = Math.max(0, resetUnix - Math.floor(Date.now() / 1000));
 
+    const upgradeMessage =
+      usageStatus.plan === 'free'
+        ? 'Upgrade to Pro for 50,000 calls/month.'
+        : 'Upgrade to Enterprise for unlimited API calls.';
+
     return jsonResponse<RateLimitResponse>(
       {
-        error: `Monthly API limit reached (${usageStatus.used}/${usageStatus.limit} calls). Upgrade to Pro for 50,000 calls/month.`,
+        error: `Monthly API limit reached (${usageStatus.used}/${usageStatus.limit} calls). ${upgradeMessage}`,
         code: 'USAGE_LIMIT_EXCEEDED',
         usage: {
           limit: usageStatus.limit,
@@ -155,7 +166,9 @@ export const handleRequest = async (
       429,
       {
         'Retry-After': String(retryAfter),
-        ...rateLimitHeaders(usageStatus),
+        'X-RateLimit-Limit': String(usageStatus.limit),
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': String(resetUnix),
       },
     );
   }
