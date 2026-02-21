@@ -60,7 +60,7 @@ test/
 - **Database**: D1 (SQLite) - shared with promptlycms.com
 - **Cache**: Tiered - L1 in-memory (5min) + L2 KV Namespace (5min/infinite)
 - **Auth**: Better Auth API Key plugin (SHA-256 hashed keys)
-- **Rate Limiting**: Monthly usage caps per org (Free: 5K, Pro: 50K)
+- **Rate Limiting**: Monthly usage caps per org (Free: 5K, Pro: 50K, Enterprise: unlimited)
 
 ## Caching
 
@@ -113,12 +113,14 @@ Monthly API call limits per organization based on subscription plan:
 |------|--------------|
 | Free (no subscription) | 5,000 |
 | Pro | 50,000 |
+| Enterprise | Unlimited |
 
 **How it works:**
 1. After API key verification, `checkUsageLimit()` checks L1 cache (60s TTL) or D1 for current month's count
-2. If limit exceeded → 429 response with `Retry-After` header and upgrade URL
-3. On success → `ctx.waitUntil(incrementUsage())` fires D1 atomic upsert (fire-and-forget, no latency impact)
-4. All successful responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers
+2. If limit exceeded → 429 response with `Retry-After` header and upgrade URL (plan-aware: free → "Upgrade to Pro", pro → "Upgrade to Enterprise")
+3. Enterprise orgs never get 429 — usage is tracked for analytics but limits are not enforced
+4. On success → `ctx.waitUntil(incrementUsage())` fires D1 atomic upsert (fire-and-forget, no latency impact)
+5. Free/Pro responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` headers. Enterprise responses omit these headers entirely.
 
 **Usage tracking uses D1 only (no KV writes):**
 - Atomic `INSERT ... ON CONFLICT UPDATE SET count = count + 1` handles concurrency
@@ -126,7 +128,7 @@ Monthly API call limits per organization based on subscription plan:
 - L1 cache absorbs repeated checks within 60s window
 - Plan limits cached in L1 with 5 min TTL (plan changes are rare)
 
-**429 Response:**
+**429 Response (free plan example):**
 ```json
 {
   "error": "Monthly API limit reached (5000/5000 calls). Upgrade to Pro for 50,000 calls/month.",
@@ -180,7 +182,7 @@ Authorization: Bearer <api_key>
 
 **subscription**:
 - `organization_id` - org-level billing
-- `plan` - "free", "pro"
+- `plan` - "free", "pro", "enterprise"
 - `status` - "active", "trialing", "canceled", etc.
 
 **prompt_version**:
