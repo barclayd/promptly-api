@@ -306,8 +306,7 @@ skipWithoutKey('returns JSON content type', async () => {
 
 // Rate limit headers
 
-// Assumes test account is free or pro plan (enterprise omits rate limit headers)
-skipWithoutPrompt('includes X-RateLimit headers on success', async () => {
+skipWithoutPrompt('returns correct rate limit headers for plan', async () => {
   const response = await fetch(`${API_URL}/prompts/${TEST_PROMPT_ID}`, {
     headers: { Authorization: `Bearer ${API_KEY}` },
   });
@@ -318,12 +317,20 @@ skipWithoutPrompt('includes X-RateLimit headers on success', async () => {
   const remaining = response.headers.get('X-RateLimit-Remaining');
   const reset = response.headers.get('X-RateLimit-Reset');
 
-  expect(limit).not.toBeNull();
-  expect(remaining).not.toBeNull();
-  expect(reset).not.toBeNull();
+  // Enterprise plans omit rate limit headers entirely
+  const hasRateLimitHeaders = limit !== null;
 
-  expect(Number(limit)).toBeGreaterThan(0);
-  expect(Number(remaining)).toBeGreaterThanOrEqual(0);
-  expect(Number(reset)).toBeGreaterThan(0);
-  expect(Number(reset)).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  if (hasRateLimitHeaders) {
+    expect(remaining).not.toBeNull();
+    expect(reset).not.toBeNull();
+
+    expect(Number(limit)).toBeGreaterThan(0);
+    expect(Number(remaining)).toBeGreaterThanOrEqual(0);
+    expect(Number(reset)).toBeGreaterThan(0);
+    expect(Number(reset)).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  } else {
+    // Enterprise: all three headers should be absent
+    expect(remaining).toBeNull();
+    expect(reset).toBeNull();
+  }
 });
