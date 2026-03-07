@@ -14,11 +14,11 @@
     "test:watch": "bun test --watch"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.4",
-    "@cloudflare/workers-types": "^4.20260227.0",
-    "@types/bun": "^1.3.9",
-    "@typescript/native-preview": "^7.0.0-dev.20260220.1",
+    "@biomejs/biome": "^2.4.6",
+    "@cloudflare/workers-types": "^4.20260307.1",
+    "@types/bun": "^1.3.10",
+    "@typescript/native-preview": "^7.0.0-dev.20260307.1",
     "typescript": "^5.9.3",
-    "wrangler": "^4.67.0"
+    "wrangler": "^4.71.0"
   }
 }
