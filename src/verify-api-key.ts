@@ -60,14 +60,13 @@ export const verifyApiKey = async (
   );
 
   if (!cachedData) {
-    // Query D1 database - join apikey with member to get organization_id
+    // Query D1 database - reference_id stores the organization_id directly
     const result = await env.promptly
       .prepare(
-        `SELECT a.id, a.key, a.user_id, a.permissions, a.enabled, a.expires_at, m.organization_id
-				FROM apikey a
-				INNER JOIN member m ON a.user_id = m.user_id
-				WHERE a.key = ?
-				LIMIT 1`,
+        `SELECT a.id, a.key, a.permissions, a.enabled, a.expires_at, a.reference_id
+        FROM apikey a
+        WHERE a.key = ?
+        LIMIT 1`,
       )
       .bind(hashedKey)
       .first<ApiKeyWithOrgRecord>();
@@ -83,7 +82,7 @@ export const verifyApiKey = async (
 
     // Cache the key data
     cachedData = {
-      organizationId: result.organization_id,
+      organizationId: result.reference_id,
       permissions: permissionsObj,
       enabled: result.enabled === 1,
       expiresAt: result.expires_at,

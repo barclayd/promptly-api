@@ -1,5 +1,7 @@
+import { fetchComposer, fetchComposers } from './fetch-composer.ts';
 import { fetchPrompt, fetchPrompts } from './fetch-prompt.ts';
 import type {
+  ComposerResponse,
   Env,
   ErrorResponse,
   PromptResponse,
@@ -90,12 +92,21 @@ export const handleRequest = async (
   }
 
   // Parse routes
-  const singleMatch = url.pathname.match(/^\/prompts\/([^/]+)$/);
-  const listMatch = url.pathname === '/prompts';
+  const promptSingleMatch = url.pathname.match(/^\/prompts\/([^/]+)$/);
+  const promptListMatch = url.pathname === '/prompts';
+  const composerSingleMatch = url.pathname.match(/^\/composers\/([^/]+)$/);
+  const composerListMatch = url.pathname === '/composers';
 
-  if (!singleMatch && !listMatch) {
+  if (
+    !promptSingleMatch &&
+    !promptListMatch &&
+    !composerSingleMatch &&
+    !composerListMatch
+  ) {
     return errorResponse('Not found', 'NOT_FOUND', 404);
   }
+
+  const isComposerRoute = composerSingleMatch || composerListMatch;
 
   // Extract and validate Authorization header
   const authHeader = request.headers.get('Authorization');
@@ -114,8 +125,9 @@ export const handleRequest = async (
 
   const apiKey = bearerMatch[1];
 
-  // Verify API key
-  const keyResult = await verifyApiKey(env, apiKey, 'prompt:read');
+  // Verify API key with route-specific permission
+  const requiredPermission = isComposerRoute ? 'composer:read' : 'prompt:read';
+  const keyResult = await verifyApiKey(env, apiKey, requiredPermission);
 
   if (!keyResult.valid) {
     const statusMap = {
@@ -174,7 +186,7 @@ export const handleRequest = async (
   }
 
   // List all prompts
-  if (listMatch) {
+  if (promptListMatch) {
     const includeVersions = url.searchParams.get('include_versions') === 'true';
     const prompts = await fetchPrompts(
       env,
@@ -190,34 +202,81 @@ export const handleRequest = async (
   }
 
   // Single prompt
-  const promptId = singleMatch?.[1] as string;
+  if (promptSingleMatch) {
+    const promptId = promptSingleMatch[1] as string;
+    const version = url.searchParams.get('version') ?? undefined;
 
-  // Get optional version parameter
+    const promptResult = await fetchPrompt(
+      env,
+      promptId,
+      keyResult.organizationId,
+      version,
+    );
+
+    if ('error' in promptResult) {
+      const statusMap: Record<string, number> = {
+        NOT_FOUND: 404,
+        VERSION_NOT_FOUND: 404,
+        BAD_REQUEST: 400,
+      };
+      const status = statusMap[promptResult.code] ?? 500;
+      return errorResponse(promptResult.error, promptResult.code, status);
+    }
+
+    ctx.waitUntil(incrementUsage(env, keyResult.organizationId));
+    return jsonResponse<PromptResponse>(
+      promptResult,
+      200,
+      rateLimitHeaders(usageStatus),
+    );
+  }
+
+  // List all composers
+  if (composerListMatch) {
+    const includeVersions = url.searchParams.get('include_versions') === 'true';
+    const result = await fetchComposers(
+      env,
+      keyResult.organizationId,
+      includeVersions,
+    );
+
+    if ('error' in result) {
+      return errorResponse(result.error, result.code, 422);
+    }
+
+    ctx.waitUntil(incrementUsage(env, keyResult.organizationId));
+    return jsonResponse<ComposerResponse[]>(
+      result,
+      200,
+      rateLimitHeaders(usageStatus),
+    );
+  }
+
+  // Single composer
+  const composerId = composerSingleMatch?.[1] as string;
   const version = url.searchParams.get('version') ?? undefined;
 
-  // Fetch the prompt
-  const promptResult = await fetchPrompt(
+  const composerResult = await fetchComposer(
     env,
-    promptId,
+    composerId,
     keyResult.organizationId,
     version,
   );
 
-  if ('error' in promptResult) {
+  if ('error' in composerResult) {
     const statusMap: Record<string, number> = {
       NOT_FOUND: 404,
       VERSION_NOT_FOUND: 404,
       BAD_REQUEST: 400,
+      UNRESOLVED_PROMPT: 422,
     };
-    const status = statusMap[promptResult.code] ?? 500;
-    return errorResponse(promptResult.error, promptResult.code, status);
+    const status = statusMap[composerResult.code] ?? 500;
+    return errorResponse(composerResult.error, composerResult.code, status);
   }
 
-  // Increment usage counter (fire-and-forget)
   ctx.waitUntil(incrementUsage(env, keyResult.organizationId));
-
-  return jsonResponse<PromptResponse>(
-    promptResult,
+  return jsonResponse<ComposerResponse>(
+    composerResult,
     200,
     rateLimitHeaders(usageStatus),
   );

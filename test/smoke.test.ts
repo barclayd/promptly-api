@@ -11,6 +11,7 @@ import { expect, test } from 'bun:test';
 const API_URL = process.env.API_URL || 'https://api.promptlycms.com';
 const API_KEY = process.env.TEST_PROMPT_API_KEY;
 const TEST_PROMPT_ID = process.env.TEST_PROMPT_ID;
+const TEST_COMPOSER_ID = process.env.TEST_COMPOSER_ID;
 
 type ErrorResponse = {
   error: string;
@@ -20,6 +21,27 @@ type ErrorResponse = {
 type PublishedVersion = {
   version: string;
   userMessage: string | null;
+};
+
+type ComposerSegment =
+  | { type: 'static'; content: string }
+  | {
+      type: 'prompt';
+      promptId: string;
+      promptName: string;
+      version: string;
+      systemMessage: string | null;
+      userMessage: string | null;
+      config: Record<string, unknown>;
+    };
+
+type ComposerResponse = {
+  composerId: string;
+  composerName: string;
+  version: string;
+  config: Record<string, unknown>;
+  segments: ComposerSegment[];
+  publishedVersions?: Array<{ version: string }>;
 };
 
 type PromptResponse = {
@@ -34,6 +56,7 @@ type PromptResponse = {
 
 const skipWithoutKey = API_KEY ? test : test.skip;
 const skipWithoutPrompt = API_KEY && TEST_PROMPT_ID ? test : test.skip;
+const skipWithoutComposer = API_KEY && TEST_COMPOSER_ID ? test : test.skip;
 
 // Auth
 
@@ -334,3 +357,191 @@ skipWithoutPrompt('returns correct rate limit headers for plan', async () => {
     expect(reset).toBeNull();
   }
 });
+
+// Composer fetching
+
+skipWithoutKey('returns 404 for non-existent composer', async () => {
+  const response = await fetch(
+    `${API_URL}/composers/definitely-not-a-real-id-12345`,
+    {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    },
+  );
+
+  const body = (await response.json()) as ErrorResponse;
+  // Either 404 (not found) or 403 (no composer:read permission)
+  expect([403, 404]).toContain(response.status);
+  if (response.status === 404) {
+    expect(body.code).toBe('NOT_FOUND');
+  }
+});
+
+skipWithoutComposer('fetches composer with correct structure', async () => {
+  const response = await fetch(`${API_URL}/composers/${TEST_COMPOSER_ID}`, {
+    headers: { Authorization: `Bearer ${API_KEY}` },
+  });
+
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as ComposerResponse;
+
+  expect(typeof body.composerId).toBe('string');
+  expect(typeof body.composerName).toBe('string');
+  expect(body.version).toMatch(/^\d+\.\d+\.\d+$/);
+  expect(typeof body.config).toBe('object');
+  expect(Array.isArray(body.segments)).toBe(true);
+});
+
+skipWithoutComposer(
+  'composer segments have valid types and structure',
+  async () => {
+    const response = await fetch(`${API_URL}/composers/${TEST_COMPOSER_ID}`, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as ComposerResponse;
+
+    for (const segment of body.segments) {
+      expect(['static', 'prompt']).toContain(segment.type);
+
+      if (segment.type === 'static') {
+        expect(typeof segment.content).toBe('string');
+      } else {
+        expect(typeof segment.promptId).toBe('string');
+        expect(typeof segment.promptName).toBe('string');
+        expect(segment.version).toMatch(/^\d+\.\d+\.\d+$/);
+        expect(typeof segment.config).toBe('object');
+      }
+    }
+  },
+);
+
+skipWithoutComposer(
+  'fetches specific composer version when provided',
+  async () => {
+    const latestResponse = await fetch(
+      `${API_URL}/composers/${TEST_COMPOSER_ID}`,
+      {
+        headers: { Authorization: `Bearer ${API_KEY}` },
+      },
+    );
+    const latest = (await latestResponse.json()) as ComposerResponse;
+    const version = latest.version;
+
+    const response = await fetch(
+      `${API_URL}/composers/${TEST_COMPOSER_ID}?version=${version}`,
+      {
+        headers: { Authorization: `Bearer ${API_KEY}` },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as ComposerResponse;
+    expect(body.version).toBe(version);
+  },
+);
+
+skipWithoutComposer(
+  'returns 404 for non-existent composer version',
+  async () => {
+    const response = await fetch(
+      `${API_URL}/composers/${TEST_COMPOSER_ID}?version=999.999.999`,
+      {
+        headers: { Authorization: `Bearer ${API_KEY}` },
+      },
+    );
+
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as ErrorResponse;
+    expect(body.code).toBe('VERSION_NOT_FOUND');
+  },
+);
+
+skipWithoutComposer(
+  'returns 400 for invalid composer version format',
+  async () => {
+    const response = await fetch(
+      `${API_URL}/composers/${TEST_COMPOSER_ID}?version=invalid`,
+      {
+        headers: { Authorization: `Bearer ${API_KEY}` },
+      },
+    );
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as ErrorResponse;
+    expect(body.code).toBe('BAD_REQUEST');
+  },
+);
+
+// Composer listing
+
+skipWithoutComposer('lists composers with correct structure', async () => {
+  const response = await fetch(`${API_URL}/composers`, {
+    headers: { Authorization: `Bearer ${API_KEY}` },
+  });
+
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as ComposerResponse[];
+
+  expect(Array.isArray(body)).toBe(true);
+
+  const composer = body[0];
+  if (composer) {
+    expect(typeof composer.composerId).toBe('string');
+    expect(typeof composer.composerName).toBe('string');
+    expect(composer.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(typeof composer.config).toBe('object');
+    expect(Array.isArray(composer.segments)).toBe(true);
+  }
+});
+
+skipWithoutComposer(
+  'lists composers with published versions when requested',
+  async () => {
+    const response = await fetch(`${API_URL}/composers?include_versions=true`, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as ComposerResponse[];
+    expect(Array.isArray(body)).toBe(true);
+
+    const composer = body[0];
+    if (composer) {
+      expect(Array.isArray(composer.publishedVersions)).toBe(true);
+      if (composer.publishedVersions && composer.publishedVersions.length > 0) {
+        const ver = composer.publishedVersions[0];
+        if (ver) {
+          expect(ver.version).toMatch(/^\d+\.\d+\.\d+$/);
+        }
+      }
+    }
+  },
+);
+
+skipWithoutComposer(
+  'returns rate limit headers for composer requests',
+  async () => {
+    const response = await fetch(`${API_URL}/composers/${TEST_COMPOSER_ID}`, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
+    });
+
+    expect(response.status).toBe(200);
+
+    const limit = response.headers.get('X-RateLimit-Limit');
+    const remaining = response.headers.get('X-RateLimit-Remaining');
+    const reset = response.headers.get('X-RateLimit-Reset');
+
+    const hasRateLimitHeaders = limit !== null;
+
+    if (hasRateLimitHeaders) {
+      expect(remaining).not.toBeNull();
+      expect(reset).not.toBeNull();
+      expect(Number(limit)).toBeGreaterThan(0);
+      expect(Number(remaining)).toBeGreaterThanOrEqual(0);
+    } else {
+      expect(remaining).toBeNull();
+      expect(reset).toBeNull();
+    }
+  },
+);
