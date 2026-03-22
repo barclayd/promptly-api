@@ -15,7 +15,7 @@ const LATEST_VERSION_TTL = L2_TTL;
 /**
  * Format semver from major/minor/patch columns
  */
-const formatVersion = (
+export const formatVersion = (
   major: number | null,
   minor: number | null,
   patch: number | null,
@@ -29,7 +29,7 @@ const formatVersion = (
 /**
  * Parse semver string into components
  */
-const parseVersion = (
+export const parseVersion = (
   version: string,
 ): { major: number; minor: number; patch: number } | null => {
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);

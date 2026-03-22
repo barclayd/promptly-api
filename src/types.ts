@@ -12,11 +12,10 @@ export type Env = {
 export type ApiKeyWithOrgRecord = {
   id: string;
   key: string;
-  user_id: string;
   permissions: string | null; // JSON array of permissions
   enabled: number; // 0 or 1
   expires_at: number | null; // unix timestamp ms
-  organization_id: string; // from member table join
+  reference_id: string; // organization_id (Better Auth references: 'organization')
 };
 
 /**
@@ -171,4 +170,88 @@ export type RateLimitResponse = ErrorResponse & {
     resetAt: string;
   };
   upgradeUrl: string;
+};
+
+/**
+ * Composer record from D1 database
+ */
+export type ComposerRecord = {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string;
+  deleted_at: number | null;
+};
+
+/**
+ * Composer version record from D1 database
+ */
+export type ComposerVersionRecord = {
+  id: string;
+  composer_id: string;
+  major: number | null;
+  minor: number | null;
+  patch: number | null;
+  content: string | null;
+  config: string;
+  published_at: number | null;
+};
+
+/**
+ * Junction table record linking composer versions to prompts
+ */
+export type ComposerVersionPromptRecord = {
+  prompt_id: string;
+  prompt_version_id: string | null;
+};
+
+/**
+ * Parsed segment types from composer HTML content
+ */
+export type StaticSegment = {
+  type: 'static';
+  content: string;
+};
+
+export type PromptSegment = {
+  type: 'prompt';
+  promptId: string;
+  promptName: string;
+  version: string;
+  systemMessage: string | null;
+  userMessage: string | null;
+  config: Record<string, unknown>;
+};
+
+export type ComposerSegment = StaticSegment | PromptSegment;
+
+/**
+ * Published version summary for composers (version string only)
+ */
+export type ComposerPublishedVersion = {
+  version: string;
+};
+
+/**
+ * API response for a composer
+ */
+export type ComposerResponse = {
+  composerId: string;
+  composerName: string;
+  version: string;
+  config: Record<string, unknown>;
+  segments: ComposerSegment[];
+  publishedVersions?: ComposerPublishedVersion[];
+};
+
+/**
+ * Cached fully-assembled composer response (includes organizationId for ownership check)
+ */
+export type CachedComposerAssembled = {
+  composerId: string;
+  composerName: string;
+  organizationId: string;
+  version: string;
+  config: Record<string, unknown>;
+  segments: ComposerSegment[];
 };

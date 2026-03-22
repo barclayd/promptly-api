@@ -41,17 +41,19 @@ curl "https://api.promptlycms.com/prompts/$TEST_PROMPT_ID" \
 
 ```
 src/
-  index.ts           # Worker entry point
-  handler.ts         # Request routing + CORS + rate limiting
-  verify-api-key.ts  # API key validation (SHA-256 + base64url)
-  fetch-prompt.ts    # Prompt fetching logic
-  usage.ts           # Usage tracking + rate limit enforcement
-  cache.ts           # Tiered cache helpers (L1 + L2)
-  memory-cache.ts    # In-memory cache with TTL
-  types.ts           # TypeScript interfaces
+  index.ts                    # Worker entry point
+  handler.ts                  # Request routing + CORS + rate limiting
+  verify-api-key.ts           # API key validation (SHA-256 + base64url)
+  fetch-prompt.ts             # Prompt fetching logic
+  fetch-composer.ts           # Composer fetching logic (resolves prompts inline)
+  parse-composer-content.ts   # HTML parser for composer content segments
+  usage.ts                    # Usage tracking + rate limit enforcement
+  cache.ts                    # Tiered cache helpers (L1 + L2)
+  memory-cache.ts             # In-memory cache with TTL
+  types.ts                    # TypeScript interfaces
 
 test/
-  smoke.test.ts      # Production smoke tests
+  smoke.test.ts               # Production smoke tests
 ```
 
 ## Architecture
@@ -143,10 +145,14 @@ Monthly API call limits per organization based on subscription plan:
 bunx wrangler d1 execute promptly --remote --command "SELECT * FROM api_usage ORDER BY updated_at DESC LIMIT 5;"
 ```
 
-## API Endpoint
+## API Endpoints
+
+### Prompts
 
 ```
-GET /prompts/:promptId?version=<optional-semver>
+GET /prompts                                    # List all prompts (requires prompt:read)
+GET /prompts?include_versions=true              # List with published version history
+GET /prompts/:promptId?version=<optional-semver> # Single prompt (requires prompt:read)
 Authorization: Bearer <api_key>
 ```
 
@@ -161,6 +167,44 @@ Authorization: Bearer <api_key>
   "config": { "model": "...", "temperature": 0.7, ... }
 }
 ```
+
+### Composers
+
+```
+GET /composers                                      # List all composers (requires composer:read)
+GET /composers?include_versions=true                # List with published version history
+GET /composers/:composerId?version=<optional-semver> # Single composer (requires composer:read)
+Authorization: Bearer <api_key>
+```
+
+**Response:**
+```json
+{
+  "composerId": "...",
+  "composerName": "...",
+  "version": "1.0.0",
+  "config": { "schema": [...], "inputDataRootName": "user" },
+  "segments": [
+    { "type": "static", "content": "<p>HTML with variable placeholders</p>" },
+    {
+      "type": "prompt",
+      "promptId": "...",
+      "promptName": "...",
+      "version": "2.1.0",
+      "systemMessage": "...",
+      "userMessage": "...",
+      "config": { "model": "...", "temperature": 0.7 }
+    }
+  ]
+}
+```
+
+**Segment types:**
+- `static` - Raw HTML content with variable placeholders (`data-variable-ref`, `{{mustache}}`)
+- `prompt` - Resolved prompt with full content, matching the PromptResponse schema
+
+**Error codes:**
+- `UNRESOLVED_PROMPT` (422) - A referenced prompt has no published version or was deleted
 
 ## Database Schema (from promptlycms.com)
 
@@ -191,10 +235,25 @@ Authorization: Bearer <api_key>
 - `config` - JSON (model, temperature, schema, etc.)
 - `published_at` - INTEGER (NULL = draft)
 
+**composer**:
+- `id`, `name`, `description`, `organization_id`
+- `deleted_at` - soft delete (NULL = active)
+
+**composer_version**:
+- `major`, `minor`, `patch` - semver as integers
+- `content` - Tiptap HTML with `<span data-prompt-ref data-prompt-id="...">` tags
+- `config` - JSON (schema fields, input data config)
+- `published_at` - INTEGER (NULL = draft)
+
+**composer_version_prompt** (junction):
+- `composer_version_id`, `prompt_id` - which prompts are in which composer version
+- `prompt_version_id` - pinned version (NULL = auto-update to latest)
+- `auto_update` - INTEGER (0 = pinned, 1 = auto-track latest)
+
 ## Key Conventions
 
 1. Use `.ts` file extensions in imports
-2. Cache keys: `apikey:{hash}`, `prompt:{id}`, `version:{id}:{version|latest}`
+2. Cache keys: `apikey:{hash}`, `prompt:{id}`, `version:{id}:{version|latest}`, `composer:{id}:{version|latest}`
 3. API keys are SHA-256 hashed and stored as base64url
 4. Permissions format: `{"resource": ["action1", "action2"]}`
 5. Versions are stored as separate major/minor/patch integers
