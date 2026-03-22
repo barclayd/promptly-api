@@ -95,10 +95,19 @@ const resolvePrompts = async (
     const promptId = queryPromptIds[i] as string;
 
     if (!result.results || result.results.length === 0) {
-      return {
-        ok: false,
-        error: `Referenced prompt "${promptId}" could not be resolved: no published version found`,
-      };
+      // Look up prompt name for a helpful error message
+      const promptRecord = await env.promptly
+        .prepare(
+          'SELECT name FROM prompt WHERE id = ? AND organization_id = ? AND deleted_at IS NULL',
+        )
+        .bind(promptId, organizationId)
+        .first<{ name: string }>();
+
+      const error = promptRecord
+        ? `Referenced prompt "${promptRecord.name}" (${promptId}) has no published version`
+        : `Referenced prompt "${promptId}" not found or not accessible`;
+
+      return { ok: false, error };
     }
 
     const row = result.results[0] as unknown as PromptWithVersion;
