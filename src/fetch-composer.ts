@@ -122,12 +122,18 @@ const resolvePrompts = async (
  */
 const buildSegments = (
   parsedSegments: Array<
-    { type: 'static'; content: string } | { type: 'prompt'; promptId: string }
+    | { type: 'static'; content: string }
+    | { type: 'prompt'; promptId: string }
+    | { type: 'html_block'; html: string }
   >,
   promptMap: Map<string, PromptWithVersion>,
 ): ComposerSegment[] => {
   return parsedSegments.map((segment) => {
     if (segment.type === 'static') {
+      return segment;
+    }
+
+    if (segment.type === 'html_block') {
       return segment;
     }
 

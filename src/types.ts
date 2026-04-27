@@ -223,7 +223,12 @@ export type PromptSegment = {
   config: Record<string, unknown>;
 };
 
-export type ComposerSegment = StaticSegment | PromptSegment;
+export type HtmlBlockSegment = {
+  type: 'html_block';
+  html: string;
+};
+
+export type ComposerSegment = StaticSegment | PromptSegment | HtmlBlockSegment;
 
 /**
  * Published version summary for composers (version string only)
