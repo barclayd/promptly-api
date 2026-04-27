@@ -15,14 +15,34 @@ const PROMPT_REF_TAG_ALT_REGEX =
 const HTML_BLOCK_OPEN_REGEX =
   /<div\b[^>]*\sdata-html-block(?:="[^"]*")?[^>]*>/gi;
 
+const RAW_HTML_ATTR_REGEX = /\sdata-raw-html="([^"]*)"/i;
+
+// Decodes a `data-raw-html` attribute value as it appears in the
+// serialized HTML string. Two layers of encoding are present:
+//   1. Browser's HTML-attribute serialization: `&` → `&amp;`, `"` → `&quot;`
+//   2. The extension's pre-encoding: `<` → `&lt;`, `>` → `&gt;`
+// The browser's layer is undone first so that `&amp;lt;` becomes `&lt;`
+// before being recognised by the inner-layer rule.
+const decodeHtmlAttr = (s: string): string =>
+  s
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+
 export type ParsedSegment =
   | { type: 'static'; content: string }
   | { type: 'prompt'; promptId: string }
   | { type: 'html_block'; html: string };
 
-// Scans the document for <div data-html-block ...> ... </div> ranges,
-// tracking <div> nesting depth and skipping HTML comments so MSO
-// conditional comments containing </div> strings don't break matching.
+// Scans the document for <div data-html-block ...> ... </div> ranges.
+// New format stores the payload in a `data-raw-html` attribute on the
+// wrapper, which we extract and decode directly. Legacy blocks (no
+// attribute) keep the depth-tracking scanner that walks <div> nesting
+// and skips HTML comments so MSO conditional comments don't break
+// matching.
 const findHtmlBlockRanges = (
   content: string,
 ): Array<{ start: number; end: number; html: string }> => {
@@ -33,6 +53,26 @@ const findHtmlBlockRanges = (
   while (openMatch !== null) {
     const blockStart = openMatch.index;
     const innerStart = blockStart + openMatch[0].length;
+
+    const rawAttrMatch = openMatch[0].match(RAW_HTML_ATTR_REGEX);
+    if (rawAttrMatch) {
+      const closeIdx = content.indexOf('</div>', innerStart);
+      if (closeIdx === -1) {
+        HTML_BLOCK_OPEN_REGEX.lastIndex = innerStart;
+        openMatch = HTML_BLOCK_OPEN_REGEX.exec(content);
+        continue;
+      }
+      const blockEnd = closeIdx + '</div>'.length;
+      ranges.push({
+        start: blockStart,
+        end: blockEnd,
+        html: decodeHtmlAttr(rawAttrMatch[1] as string),
+      });
+      HTML_BLOCK_OPEN_REGEX.lastIndex = blockEnd;
+      openMatch = HTML_BLOCK_OPEN_REGEX.exec(content);
+      continue;
+    }
+
     let i = innerStart;
     let depth = 1;
     let matched = false;
