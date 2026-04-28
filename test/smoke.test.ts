@@ -33,7 +33,8 @@ type ComposerSegment =
       systemMessage: string | null;
       userMessage: string | null;
       config: Record<string, unknown>;
-    };
+    }
+  | { type: 'html_block'; html: string };
 
 type ComposerResponse = {
   composerId: string;
@@ -402,10 +403,12 @@ skipWithoutComposer(
     const body = (await response.json()) as ComposerResponse;
 
     for (const segment of body.segments) {
-      expect(['static', 'prompt']).toContain(segment.type);
+      expect(['static', 'prompt', 'html_block']).toContain(segment.type);
 
       if (segment.type === 'static') {
         expect(typeof segment.content).toBe('string');
+      } else if (segment.type === 'html_block') {
+        expect(typeof segment.html).toBe('string');
       } else {
         expect(typeof segment.promptId).toBe('string');
         expect(typeof segment.promptName).toBe('string');
