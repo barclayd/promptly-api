@@ -1,4 +1,4 @@
-import { getFromCache, L2_TTL, setInCache } from './cache.ts';
+import { getFromCache, setInCache } from './cache.ts';
 import { formatVersion, parseVersion } from './fetch-prompt.ts';
 import { parseComposerContent } from './parse-composer-content.ts';
 import type {
@@ -12,7 +12,12 @@ import type {
   Env,
 } from './types.ts';
 
-const LATEST_VERSION_TTL = L2_TTL;
+// Composers are cached for 1 minute across both tiers (L1 in-memory + L2 KV).
+// This bounds staleness for auto-update prompt refs, which resolve to the latest
+// published prompt version at request time — including explicit-version reads,
+// since a pinned composer version can still contain auto-update refs. 60s is also
+// the minimum TTL Cloudflare KV accepts.
+const COMPOSER_TTL = 60;
 
 type PromptWithVersion = {
   id: string;
@@ -195,6 +200,7 @@ export const fetchComposer = async (
   const cached = await getFromCache<CachedComposerAssembled>(
     env.PROMPTS_CACHE,
     cacheKey,
+    COMPOSER_TTL,
   );
 
   if (cached) {
@@ -331,8 +337,13 @@ export const fetchComposer = async (
     segments,
   };
 
-  const kvTtl = version ? 0 : LATEST_VERSION_TTL;
-  await setInCache(env.PROMPTS_CACHE, cacheKey, cacheValue, kvTtl);
+  await setInCache(
+    env.PROMPTS_CACHE,
+    cacheKey,
+    cacheValue,
+    COMPOSER_TTL,
+    COMPOSER_TTL,
+  );
 
   return {
     composerId: composer.id,

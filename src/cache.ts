@@ -10,6 +10,7 @@ const L2_TTL = 300; // 5 minutes for KV cache (default)
 export const getFromCache = async <T>(
   kv: Env['PROMPTS_CACHE'],
   key: string,
+  l1Ttl: number = L1_TTL,
 ): Promise<T | null> => {
   // L1: In-memory cache
   const l1 = memoryCache.get<T>(key);
@@ -23,7 +24,7 @@ export const getFromCache = async <T>(
   if (l2 !== null) {
     console.log(JSON.stringify({ event: 'cache_hit', key, layer: 'L2' }));
     // Promote to L1
-    memoryCache.set(key, l2, L1_TTL);
+    memoryCache.set(key, l2, l1Ttl);
     return l2;
   }
 
@@ -37,15 +38,17 @@ export const getFromCache = async <T>(
  * @param key - Cache key
  * @param value - Value to cache
  * @param kvTtl - KV TTL in seconds. 0 = infinite, undefined = skip KV write (L1 only)
+ * @param l1Ttl - In-memory (L1) TTL in seconds. Defaults to L1_TTL.
  */
 export const setInCache = async <T>(
   kv: Env['PROMPTS_CACHE'],
   key: string,
   value: T,
   kvTtl?: number,
+  l1Ttl: number = L1_TTL,
 ): Promise<void> => {
   // Always write to L1
-  memoryCache.set(key, value, L1_TTL);
+  memoryCache.set(key, value, l1Ttl);
 
   // Only write to L2 (KV) if kvTtl is provided
   if (kvTtl !== undefined) {
