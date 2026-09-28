@@ -1,6 +1,9 @@
 import { getFromCache, setInCache } from './cache.ts';
 import { formatVersion, parseVersion } from './fetch-prompt.ts';
-import { parseComposerContent } from './parse-composer-content.ts';
+import {
+  type ParsedSegment,
+  parseComposerContent,
+} from './parse-composer-content.ts';
 import type {
   CachedComposerAssembled,
   ComposerPublishedVersion,
@@ -31,31 +34,53 @@ type PromptWithVersion = {
   config: string;
 };
 
+type PromptRef = { promptId: string; pinnedVersionId: string | null };
+
+// Two composers can reference the same prompt with different pins, so
+// resolution is keyed by (promptId, pin) rather than promptId alone.
+const refKey = (promptId: string, pinnedVersionId: string | null) =>
+  `${promptId}:${pinnedVersionId ?? ''}`;
+
+const promptRefs = (
+  parsedSegments: ParsedSegment[],
+  junctionMap: Map<string, string | null>,
+): PromptRef[] =>
+  parsedSegments
+    .filter(
+      (s): s is Extract<ParsedSegment, { type: 'prompt' }> =>
+        s.type === 'prompt',
+    )
+    .map((s) => ({
+      promptId: s.promptId,
+      pinnedVersionId: junctionMap.get(s.promptId) ?? null,
+    }));
+
 /**
- * Resolve all unique prompts referenced in a composer version.
+ * Resolve all unique prompt refs (prompt + pin) referenced by composer versions.
  * Uses D1 batch to resolve all prompts in a single round trip.
- * Returns a map of promptId → resolved prompt data, or an error.
+ * Returns a map of refKey → resolved prompt data, or an error.
  */
 const resolvePrompts = async (
   env: Env,
-  uniquePromptIds: string[],
-  junctionMap: Map<string, string | null>,
+  refs: PromptRef[],
   organizationId: string,
 ): Promise<
   | { ok: true; prompts: Map<string, PromptWithVersion> }
   | { ok: false; error: string }
 > => {
-  if (uniquePromptIds.length === 0) {
+  const uniqueRefs = [
+    ...new Map(
+      refs.map((r) => [refKey(r.promptId, r.pinnedVersionId), r]),
+    ).values(),
+  ];
+  if (uniqueRefs.length === 0) {
     return { ok: true, prompts: new Map() };
   }
 
-  // Build batch queries: for each prompt, resolve based on junction pin
+  // Build batch queries: for each ref, resolve based on its junction pin
   const queries: D1PreparedStatement[] = [];
-  const queryPromptIds: string[] = [];
 
-  for (const promptId of uniquePromptIds) {
-    const pinnedVersionId = junctionMap.get(promptId);
-
+  for (const { promptId, pinnedVersionId } of uniqueRefs) {
     if (pinnedVersionId) {
       // Pinned: fetch specific version
       queries.push(
@@ -89,7 +114,6 @@ const resolvePrompts = async (
           .bind(promptId, organizationId),
       );
     }
-    queryPromptIds.push(promptId);
   }
 
   const batchResults = await env.promptly.batch(queries);
@@ -97,7 +121,7 @@ const resolvePrompts = async (
 
   for (let i = 0; i < batchResults.length; i++) {
     const result = batchResults[i] as D1Result;
-    const promptId = queryPromptIds[i] as string;
+    const { promptId, pinnedVersionId } = uniqueRefs[i] as PromptRef;
 
     if (!result.results || result.results.length === 0) {
       // Look up prompt name for a helpful error message
@@ -116,7 +140,7 @@ const resolvePrompts = async (
     }
 
     const row = result.results[0] as unknown as PromptWithVersion;
-    prompts.set(promptId, row);
+    prompts.set(refKey(promptId, pinnedVersionId), row);
   }
 
   return { ok: true, prompts };
@@ -126,12 +150,9 @@ const resolvePrompts = async (
  * Build the resolved segments array from parsed content and prompt data.
  */
 const buildSegments = (
-  parsedSegments: Array<
-    | { type: 'static'; content: string }
-    | { type: 'prompt'; promptId: string }
-    | { type: 'html_block'; html: string }
-  >,
+  parsedSegments: ParsedSegment[],
   promptMap: Map<string, PromptWithVersion>,
+  junctionMap: Map<string, string | null>,
 ): ComposerSegment[] => {
   return parsedSegments.map((segment) => {
     if (segment.type === 'static') {
@@ -142,7 +163,8 @@ const buildSegments = (
       return segment;
     }
 
-    const prompt = promptMap.get(segment.promptId);
+    const pinnedVersionId = junctionMap.get(segment.promptId) ?? null;
+    const prompt = promptMap.get(refKey(segment.promptId, pinnedVersionId));
     if (!prompt) {
       // Should not happen since resolvePrompts validates all prompts
       return {
@@ -150,6 +172,7 @@ const buildSegments = (
         promptId: segment.promptId,
         promptName: segment.promptId,
         version: 'unknown',
+        pinned: pinnedVersionId !== null,
         systemMessage: null,
         userMessage: null,
         config: {},
@@ -161,6 +184,7 @@ const buildSegments = (
       promptId: prompt.id,
       promptName: prompt.name,
       version: formatVersion(prompt.major, prompt.minor, prompt.patch),
+      pinned: pinnedVersionId !== null,
       systemMessage: prompt.system_message,
       userMessage: prompt.user_message,
       config: JSON.parse(prompt.config || '{}') as Record<string, unknown>,
@@ -275,22 +299,6 @@ export const fetchComposer = async (
   const content = composerVersion.content ?? '';
   const parsedSegments = parseComposerContent(content);
 
-  // Get unique prompt IDs
-  const uniquePromptIds = [
-    ...new Set(
-      parsedSegments
-        .filter(
-          (
-            s,
-          ): s is Extract<
-            (typeof parsedSegments)[number],
-            { type: 'prompt' }
-          > => s.type === 'prompt',
-        )
-        .map((s) => s.promptId),
-    ),
-  ];
-
   // Fetch junction entries
   const junctionResult = await env.promptly
     .prepare(
@@ -307,8 +315,7 @@ export const fetchComposer = async (
   // Resolve all prompts
   const resolveResult = await resolvePrompts(
     env,
-    uniquePromptIds,
-    junctionMap,
+    promptRefs(parsedSegments, junctionMap),
     organizationId,
   );
 
@@ -316,7 +323,11 @@ export const fetchComposer = async (
     return { error: resolveResult.error, code: 'UNRESOLVED_PROMPT' };
   }
 
-  const segments = buildSegments(parsedSegments, resolveResult.prompts);
+  const segments = buildSegments(
+    parsedSegments,
+    resolveResult.prompts,
+    junctionMap,
+  );
   const versionStr = formatVersion(
     composerVersion.major,
     composerVersion.minor,
@@ -413,45 +424,26 @@ export const fetchComposers = async (
 
   const junctionResults = await env.promptly.batch(junctionQueries);
 
-  // Build a global map of all prompt IDs to their pinned versions
-  // and per-composer junction maps
-  const perComposerJunctions: Map<string, string | null>[] = [];
-  const allPromptIds = new Set<string>();
-  const globalJunctionMap = new Map<string, string | null>();
-
-  for (let i = 0; i < junctionResults.length; i++) {
-    const junctionMap = new Map<string, string | null>();
-    const junctionBatch = junctionResults[i] as D1Result;
+  // Per-composer junction maps (prompt → pinned version, null = auto-update)
+  const perComposerJunctions = junctionResults.map((junctionBatch) => {
     const junctionRows =
-      (junctionBatch.results as unknown as ComposerVersionPromptRecord[]) ?? [];
+      ((junctionBatch as D1Result)
+        .results as unknown as ComposerVersionPromptRecord[]) ?? [];
+    return new Map(
+      junctionRows.map((row) => [row.prompt_id, row.prompt_version_id]),
+    );
+  });
 
-    for (const row of junctionRows) {
-      junctionMap.set(row.prompt_id, row.prompt_version_id);
-      allPromptIds.add(row.prompt_id);
-      // For global resolution, prefer pinned version if available
-      if (!globalJunctionMap.has(row.prompt_id)) {
-        globalJunctionMap.set(row.prompt_id, row.prompt_version_id);
-      }
-    }
-    perComposerJunctions.push(junctionMap);
-  }
+  const parsedByComposer = rows.map((row) =>
+    parseComposerContent(row.content ?? ''),
+  );
 
-  // Also collect prompt IDs from HTML content (in case junction is out of sync)
-  for (const row of rows) {
-    const parsed = parseComposerContent(row.content ?? '');
-    for (const segment of parsed) {
-      if (segment.type === 'prompt') {
-        allPromptIds.add(segment.promptId);
-      }
-    }
-  }
-
-  // Resolve all unique prompts across all composers in one batch
-  const uniquePromptIds = [...allPromptIds];
+  // Resolve every (prompt, pin) ref across all composers in one batch
   const resolveResult = await resolvePrompts(
     env,
-    uniquePromptIds,
-    globalJunctionMap,
+    parsedByComposer.flatMap((parsed, i) =>
+      promptRefs(parsed, perComposerJunctions[i] ?? new Map()),
+    ),
     organizationId,
   );
 
@@ -460,18 +452,17 @@ export const fetchComposers = async (
   }
 
   // Assemble responses
-  const composers: ComposerResponse[] = rows.map((row) => {
-    const parsedSegments = parseComposerContent(row.content ?? '');
-    const segments = buildSegments(parsedSegments, resolveResult.prompts);
-
-    return {
-      composerId: row.id,
-      composerName: row.name,
-      version: formatVersion(row.major, row.minor, row.patch),
-      config: JSON.parse(row.config || '{}') as Record<string, unknown>,
-      segments,
-    };
-  });
+  const composers: ComposerResponse[] = rows.map((row, i) => ({
+    composerId: row.id,
+    composerName: row.name,
+    version: formatVersion(row.major, row.minor, row.patch),
+    config: JSON.parse(row.config || '{}') as Record<string, unknown>,
+    segments: buildSegments(
+      parsedByComposer[i] ?? [],
+      resolveResult.prompts,
+      perComposerJunctions[i] ?? new Map(),
+    ),
+  }));
 
   // Optionally include published version summaries
   if (includeVersions) {

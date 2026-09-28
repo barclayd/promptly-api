@@ -218,6 +218,9 @@ export type PromptSegment = {
   promptId: string;
   promptName: string;
   version: string;
+  // True when the composer version pins an explicit prompt version; false when
+  // it auto-updates to the latest published prompt version at request time.
+  pinned: boolean;
   systemMessage: string | null;
   userMessage: string | null;
   config: Record<string, unknown>;

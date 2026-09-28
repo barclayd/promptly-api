@@ -191,6 +191,7 @@ Authorization: Bearer <api_key>
       "promptId": "...",
       "promptName": "...",
       "version": "2.1.0",
+      "pinned": true,
       "systemMessage": "...",
       "userMessage": "...",
       "config": { "model": "...", "temperature": 0.7 }
@@ -201,7 +202,7 @@ Authorization: Bearer <api_key>
 
 **Segment types:**
 - `static` - Raw HTML content with variable placeholders (`data-variable-ref`, `{{mustache}}`)
-- `prompt` - Resolved prompt with full content, matching the PromptResponse schema
+- `prompt` - Resolved prompt with full content, matching the PromptResponse schema, plus `pinned` (`true` when the composer version pins an explicit prompt version, `false` when it follows the latest published prompt version)
 
 **Error codes:**
 - `UNRESOLVED_PROMPT` (422) - A referenced prompt has no published version or was deleted
